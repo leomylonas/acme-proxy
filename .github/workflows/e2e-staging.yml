@@ -1,0 +1,35 @@
+name: E2E (Let's Encrypt staging)
+
+# Manually-triggered live end-to-end test against the real Let's Encrypt staging
+# directory using a real HestiaCP-managed domain. Requires repository secrets:
+#   E2E_DOMAIN            apex of the HestiaCP-managed zone (challenge TXT goes at its _acme-challenge)
+#   E2E_HESTIA_BASEURL    e.g. https://panel.example.com:8083
+#   E2E_HESTIA_ACCESSKEY  HestiaCP Access Key id
+#   E2E_HESTIA_SECRETKEY  HestiaCP Access Key secret
+#   E2E_HESTIA_USERNAME   HestiaCP user that owns the zone
+#   E2E_ACCOUNT_EMAIL     (optional) contact email for the LE account
+on:
+  workflow_dispatch:
+
+jobs:
+  live-staging:
+    name: Live issuance against LE staging
+    runs-on: ubuntu-latest
+    env:
+      ACMEPROXY_E2E_STAGING: '1'
+      E2E_DOMAIN: ${{ secrets.E2E_DOMAIN }}
+      E2E_HESTIA_BASEURL: ${{ secrets.E2E_HESTIA_BASEURL }}
+      E2E_HESTIA_ACCESSKEY: ${{ secrets.E2E_HESTIA_ACCESSKEY }}
+      E2E_HESTIA_SECRETKEY: ${{ secrets.E2E_HESTIA_SECRETKEY }}
+      E2E_HESTIA_USERNAME: ${{ secrets.E2E_HESTIA_USERNAME }}
+      E2E_ACCOUNT_EMAIL: ${{ secrets.E2E_ACCOUNT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Live staging e2e
+        run: dotnet test tests/AcmeProxy.E2ETests/AcmeProxy.E2ETests.csproj --filter "FullyQualifiedName~LiveStagingEndToEndTests" --configuration Release --logger "console;verbosity=detailed"

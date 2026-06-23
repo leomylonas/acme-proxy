@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-unit-test:
+    name: Build & unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Unit tests
+        run: dotnet test tests/AcmeProxy.Tests/AcmeProxy.Tests.csproj --no-build --configuration Release --logger "console;verbosity=normal"
+
+  pebble-e2e:
+    name: Pebble end-to-end
+    runs-on: ubuntu-latest
+    needs: build-and-unit-test
+    env:
+      ACMEPROXY_E2E: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # ubuntu-latest runners ship Docker + Compose, which the PebbleFixture drives.
+      - name: Pebble e2e tests
+        run: dotnet test tests/AcmeProxy.E2ETests/AcmeProxy.E2ETests.csproj --configuration Release --logger "console;verbosity=normal"

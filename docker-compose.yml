@@ -1,0 +1,23 @@
+services:
+  acmeproxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    volumes:
+      - acmeproxy-data:/data
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__Default=Data Source=/data/acmeproxy.db
+      - Proxy__LetsEncrypt__UseStaging=true
+      - Proxy__LetsEncrypt__AccountEmail=admin@example.com
+      - Proxy__HestiaCP__BaseUrl=https://panel.example.com:8083
+      - Proxy__HestiaCP__AccessKey=
+      - Proxy__HestiaCP__SecretKey=
+      - Proxy__HestiaCP__Username=
+      - Proxy__AllowedDomains__0=example.com
+    restart: unless-stopped
+
+volumes:
+  acmeproxy-data:

@@ -1,0 +1,23 @@
+# Pebble (Let's Encrypt's test ACME server) + challtestsrv (mock DNS) for hermetic
+# end-to-end testing. Pebble validates the dns-01 challenge by querying challtestsrv,
+# into which the test publishes the TXT record via the management API on :8055.
+services:
+  pebble:
+    image: ghcr.io/letsencrypt/pebble:latest
+    command: -config /test/config/pebble-config.json -dnsserver challtestsrv:8053
+    environment:
+      - PEBBLE_VA_NOSLEEP=1
+      - PEBBLE_VA_ALWAYS_VALID=0
+    ports:
+      - "14000:14000"   # ACME directory
+      - "15000:15000"   # management
+    depends_on:
+      - challtestsrv
+
+  challtestsrv:
+    image: ghcr.io/letsencrypt/pebble-challtestsrv:latest
+    command: ["-dnsserver=:8053", "-http01=", "-https01=", "-tlsalpn01=", "-doh=", "-management=:8055"]
+    ports:
+      - "8055:8055"        # management HTTP API (set-txt / clear-txt)
+      - "8053:8053/tcp"    # DNS over TCP
+      - "8053:8053/udp"    # DNS over UDP

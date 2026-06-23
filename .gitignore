@@ -1,0 +1,13 @@
+bin/
+obj/
+*.db
+*.db-shm
+*.db-wal
+.vs/
+
+appsettings.user.json
+
+# Local secrets / e2e credentials — never commit
+.env
+.env.*
+appsettings.*.local.json

@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AcmeProxy/AcmeProxy.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AcmeProxy.E2ETests/AcmeProxy.E2ETests.csproj" />
+    <Project Path="tests/AcmeProxy.Tests/AcmeProxy.Tests.csproj" />
+  </Folder>
+</Solution>
