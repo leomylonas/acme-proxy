@@ -293,7 +293,9 @@ public class AcmeController : ControllerBase
 		if (error is not null)
 			return error;
 
-		var challenge = await _db.Challenges.FirstOrDefaultAsync(c => c.Id == challengeId);
+		var challenge = await _db.Challenges
+			.Include(c => c.Authorization)
+			.FirstOrDefaultAsync(c => c.Id == challengeId);
 		if (challenge is null)
 			return Problem(StatusCodes.Status404NotFound, "malformed", "Challenge not found.");
 
@@ -308,6 +310,9 @@ public class AcmeController : ControllerBase
 		}
 
 		AddReplayNonce();
+		if (challenge.Authorization is not null)
+			Response.Headers["Link"] = $"<{BaseUrl}/acme/authz/{challenge.Authorization.Id}>;rel=\"up\"";
+
 		var status = challenge.Status == "pending" ? "processing" : challenge.Status;
 		return new JsonResult(new ChallengeResponse
 		{
