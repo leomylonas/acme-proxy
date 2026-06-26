@@ -10,6 +10,10 @@
 		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.*" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.*" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.*" />
+		<PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+		<PackageReference Include="Serilog.Settings.Configuration" Version="10.0.1" />
+		<PackageReference Include="Serilog.Sinks.Async" Version="2.*" />
+		<PackageReference Include="Serilog.Sinks.Console" Version="6.*" />
 		<!-- Pin patched native SQLite to resolve NU1903 (GHSA-2m69-gcr7-jv3q) in the
 		     2.1.11 lib pulled in transitively by EF Core's Sqlite provider. -->
 		<PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />

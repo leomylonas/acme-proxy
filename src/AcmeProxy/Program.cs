@@ -4,6 +4,7 @@ using AcmeProxy.HestiaCP;
 using AcmeProxy.LetsEncrypt;
 using AcmeProxy.Services;
 using Microsoft.EntityFrameworkCore;
+using Serilog;
 
 namespace AcmeProxy;
 
@@ -21,6 +22,10 @@ public class Program
 		{
 			builder.Configuration.AddJsonFile("appsettings.user.json", optional: true, reloadOnChange: true);
 		}
+
+		builder.Logging.ClearProviders();
+		builder.Host.UseSerilog((context, services, loggerConfiguration) =>
+			loggerConfiguration.ReadFrom.Configuration(context.Configuration));
 
 		ConfigureServices(builder);
 
