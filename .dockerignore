@@ -1,0 +1,22 @@
+# Build artifacts — must not leak host restore state into the image, otherwise
+# the copied obj/project.assets.json points at packages absent from the image's
+# NuGet cache (NETSDK1064).
+**/bin/
+**/obj/
+
+# Local state / secrets — never send to the build context.
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/appsettings.user.json
+**/appsettings.*.local.json
+.env
+.env.*
+
+# VCS / IDE / docs not needed to build.
+.git/
+.github/
+.vs/
+tests/
+docs/
+*.md
