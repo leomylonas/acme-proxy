@@ -175,24 +175,64 @@ public class AcmeController : ControllerBase
 		{ StatusCode = StatusCodes.Status201Created };
 	}
 
-	// ---- GET /acme/orders/{accountId} ------------------------------------------
+	// ---- GET/POST-as-GET /acme/account/{accountId} -----------------------------
 
-	// The orders list advertised by new-account. This proxy does not maintain
-	// client-account-scoped order ownership, so it returns an empty list.
-	[HttpGet("orders/{accountId:guid}")]
-	public IActionResult GetOrders(Guid accountId)
+	[HttpGet("account/{accountId:guid}")]
+	[HttpPost("account/{accountId:guid}")]
+	public async Task<IActionResult> GetAccount(Guid accountId)
 	{
-		_logger.LogDebug("GET orders for account {AccountId}", accountId);
+		_logger.LogDebug("{Method} account {AccountId}", Request.Method, accountId);
+		if (HttpMethods.IsPost(Request.Method))
+		{
+			var (_, err) = await ReadJwsAsync();
+			if (err is not null) return err;
+		}
+
+		var account = await _db.ClientAccounts.FindAsync(accountId);
+		if (account is null)
+			return Problem(StatusCodes.Status404NotFound, "accountDoesNotExist", "Account not found.");
+
+		AddReplayNonce();
+		Response.Headers["Location"] = $"{BaseUrl}/acme/account/{account.Id}";
+		return new JsonResult(new AccountResponse
+		{
+			Status = "valid",
+			Contact = new List<string>(),
+			Orders = $"{BaseUrl}/acme/orders/{account.Id}",
+		});
+	}
+
+	// ---- GET/POST-as-GET /acme/orders/{accountId} -------------------------------
+
+	// This proxy does not maintain client-account-scoped order ownership, so it returns an empty list.
+	[HttpGet("orders/{accountId:guid}")]
+	[HttpPost("orders/{accountId:guid}")]
+	public async Task<IActionResult> GetOrders(Guid accountId)
+	{
+		_logger.LogDebug("{Method} orders for account {AccountId}", Request.Method, accountId);
+		if (HttpMethods.IsPost(Request.Method))
+		{
+			var (_, err) = await ReadJwsAsync();
+			if (err is not null) return err;
+		}
+
 		AddReplayNonce();
 		return new JsonResult(new { orders = Array.Empty<string>() });
 	}
 
-	// ---- GET /acme/order/{orderId} ---------------------------------------------
+	// ---- GET/POST-as-GET /acme/order/{orderId} ---------------------------------
 
 	[HttpGet("order/{orderId:guid}")]
+	[HttpPost("order/{orderId:guid}")]
 	public async Task<IActionResult> GetOrder(Guid orderId)
 	{
-		_logger.LogDebug("GET order {OrderId}", orderId);
+		_logger.LogDebug("{Method} order {OrderId}", Request.Method, orderId);
+		if (HttpMethods.IsPost(Request.Method))
+		{
+			var (_, err) = await ReadJwsAsync();
+			if (err is not null) return err;
+		}
+
 		var order = await _db.Orders
 			.Include(o => o.Authorization)
 			.Include(o => o.Certificate)
@@ -206,12 +246,19 @@ public class AcmeController : ControllerBase
 		return new JsonResult(BuildOrderResponse(order, order.Authorization, order.Certificate));
 	}
 
-	// ---- GET /acme/authz/{authzId} ---------------------------------------------
+	// ---- GET/POST-as-GET /acme/authz/{authzId} ----------------------------------
 
 	[HttpGet("authz/{authzId:guid}")]
+	[HttpPost("authz/{authzId:guid}")]
 	public async Task<IActionResult> GetAuthz(Guid authzId)
 	{
-		_logger.LogDebug("GET authz {AuthzId}", authzId);
+		_logger.LogDebug("{Method} authz {AuthzId}", Request.Method, authzId);
+		if (HttpMethods.IsPost(Request.Method))
+		{
+			var (_, err) = await ReadJwsAsync();
+			if (err is not null) return err;
+		}
+
 		var authz = await _db.Authorizations
 			.Include(a => a.Challenge)
 			.FirstOrDefaultAsync(a => a.Id == authzId);
@@ -346,12 +393,19 @@ public class AcmeController : ControllerBase
 		return new JsonResult(BuildOrderResponse(order, order.Authorization, certificate));
 	}
 
-	// ---- GET /acme/cert/{certId} -----------------------------------------------
+	// ---- GET/POST-as-GET /acme/cert/{certId} -----------------------------------
 
 	[HttpGet("cert/{certId:guid}")]
+	[HttpPost("cert/{certId:guid}")]
 	public async Task<IActionResult> GetCertificate(Guid certId)
 	{
-		_logger.LogDebug("GET certificate {CertId}", certId);
+		_logger.LogDebug("{Method} certificate {CertId}", Request.Method, certId);
+		if (HttpMethods.IsPost(Request.Method))
+		{
+			var (_, err) = await ReadJwsAsync();
+			if (err is not null) return err;
+		}
+
 		var cert = await _db.Certificates.FirstOrDefaultAsync(c => c.Id == certId);
 		if (cert is null)
 			return Problem(StatusCodes.Status404NotFound, "malformed", "Certificate not found.");
