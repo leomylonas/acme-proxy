@@ -171,14 +171,18 @@ public key stored at registration. Replay nonces are single-use.
 
 ```bash
 certbot certonly \
-  --server http://acmeproxy.internal/acme/directory \
+  --manual \
   --preferred-challenges dns \
-  -d sub.example.com \
-  --register-unsafely-without-email
+  --manual-auth-hook /bin/true \
+  --manual-cleanup-hook /bin/true \
+  --server http://acmeproxy.internal/acme/directory \
+  --non-interactive \
+  -d sub.example.com
 ```
 
-Because AcmeProxy fulfils the `dns-01` challenge internally, no `--manual-auth-hook` is
-required — certbot just polls until the order is ready.
+The `--manual-auth-hook /bin/true` and `--manual-cleanup-hook /bin/true` are no-ops —
+AcmeProxy fulfils the `dns-01` challenge internally, so certbot never needs to touch DNS
+itself. It simply polls until the order is ready.
 
 ### cert-manager
 
