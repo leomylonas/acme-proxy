@@ -186,9 +186,9 @@ public class LetsEncryptClient : ILetsEncryptClient
 		// We intentionally avoid chain.ToPem(), which resolves issuers against certes'
 		// built-in CA store and throws for roots it does not know (e.g. Pebble's test root).
 		var builder = new System.Text.StringBuilder();
-		builder.Append(chain.Certificate.ToPem());
+		builder.AppendLine(chain.Certificate.ToPem().TrimEnd());
 		foreach (var issuer in chain.Issuers)
-			builder.Append(issuer.ToPem());
+			builder.AppendLine(issuer.ToPem().TrimEnd());
 		var pem = builder.ToString();
 
 		_logger.LogInformation("Downloaded certificate chain ({Bytes} bytes) for order {Url}", pem.Length, leOrderUrl);
