@@ -71,6 +71,7 @@ public class AcmeController : ControllerBase
 	}
 
 	[HttpGet("new-nonce")]
+	[HttpPost("new-nonce")]
 	public IActionResult GetNewNonce()
 	{
 		AddReplayNonce();
