@@ -12,14 +12,17 @@ using Microsoft.Extensions.Options;
 namespace AcmeProxy.Controllers;
 
 [ApiController]
-[Route("acme")]
+[Route("letsencrypt/{env}")]
 public class AcmeController : ControllerBase
 {
 	private const string AcmeErrorPrefix = "urn:ietf:params:acme:error:";
 
+	private static readonly HashSet<string> ValidEnvironments = new(StringComparer.OrdinalIgnoreCase) { "staging", "production" };
+
 	private readonly AcmeProxyDbContext _db;
 	private readonly NonceService _nonces;
 	private readonly ProxyOptions _options;
+	private readonly ILetsEncryptClientFactory _leFactory;
 	private readonly IServiceScopeFactory _scopeFactory;
 	private readonly ILogger<AcmeController> _logger;
 
@@ -27,33 +30,45 @@ public class AcmeController : ControllerBase
 		AcmeProxyDbContext db,
 		NonceService nonces,
 		IOptions<ProxyOptions> options,
+		ILetsEncryptClientFactory leFactory,
 		IServiceScopeFactory scopeFactory,
 		ILogger<AcmeController> logger)
 	{
 		_db = db;
 		_nonces = nonces;
 		_options = options.Value;
+		_leFactory = leFactory;
 		_scopeFactory = scopeFactory;
 		_logger = logger;
 	}
 
 	private string BaseUrl => $"{Request.Scheme}://{Request.Host}";
 
+	private string AcmeBase(string env) => $"{BaseUrl}/letsencrypt/{env}";
+
+	private IActionResult? ValidateEnv(string env)
+	{
+		if (!ValidEnvironments.Contains(env))
+			return Problem(StatusCodes.Status404NotFound, "malformed", $"Unknown environment '{env}'. Use 'staging' or 'production'.");
+		return null;
+	}
+
 	private void AddReplayNonce() => Response.Headers["Replay-Nonce"] = _nonces.IssueNonce();
 
-	// ---- GET /acme/directory ---------------------------------------------------
+	// ---- GET /letsencrypt/{env}/directory -------------------------------------
 
 	[HttpGet("directory")]
-	public IActionResult GetDirectory()
+	public IActionResult GetDirectory(string env)
 	{
+		if (ValidateEnv(env) is { } err) return err;
 		AddReplayNonce();
 		return new JsonResult(new DirectoryModel
 		{
-			NewNonce = $"{BaseUrl}/acme/new-nonce",
-			NewAccount = $"{BaseUrl}/acme/new-account",
-			NewOrder = $"{BaseUrl}/acme/new-order",
-			RevokeCert = $"{BaseUrl}/acme/revoke-cert",
-			KeyChange = $"{BaseUrl}/acme/key-change",
+			NewNonce = $"{AcmeBase(env)}/new-nonce",
+			NewAccount = $"{AcmeBase(env)}/new-account",
+			NewOrder = $"{AcmeBase(env)}/new-order",
+			RevokeCert = $"{AcmeBase(env)}/revoke-cert",
+			KeyChange = $"{AcmeBase(env)}/key-change",
 			Meta = new DirectoryMeta
 			{
 				TermsOfService = "https://letsencrypt.org/documents/LE-SA-v1.3-September-21-2022.pdf",
@@ -64,25 +79,28 @@ public class AcmeController : ControllerBase
 	// ---- new-nonce -------------------------------------------------------------
 
 	[HttpHead("new-nonce")]
-	public IActionResult HeadNewNonce()
+	public IActionResult HeadNewNonce(string env)
 	{
+		if (ValidateEnv(env) is { } err) return err;
 		AddReplayNonce();
 		return NoContent();
 	}
 
 	[HttpGet("new-nonce")]
 	[HttpPost("new-nonce")]
-	public IActionResult GetNewNonce()
+	public IActionResult GetNewNonce(string env)
 	{
+		if (ValidateEnv(env) is { } err) return err;
 		AddReplayNonce();
 		return Ok();
 	}
 
-	// ---- POST /acme/new-account ------------------------------------------------
+	// ---- POST /letsencrypt/{env}/new-account ----------------------------------
 
 	[HttpPost("new-account")]
-	public async Task<IActionResult> NewAccount()
+	public async Task<IActionResult> NewAccount(string env)
 	{
+		if (ValidateEnv(env) is { } envErr) return envErr;
 		var (jws, error) = await ReadJwsAsync();
 		if (error is not null)
 			return error;
@@ -99,21 +117,22 @@ public class AcmeController : ControllerBase
 		await _db.SaveChangesAsync();
 
 		AddReplayNonce();
-		Response.Headers["Location"] = $"{BaseUrl}/acme/account/{account.Id}";
+		Response.Headers["Location"] = $"{AcmeBase(env)}/account/{account.Id}";
 		return new JsonResult(new AccountResponse
 		{
 			Status = "valid",
 			Contact = new List<string>(),
-			Orders = $"{BaseUrl}/acme/orders/{account.Id}",
+			Orders = $"{AcmeBase(env)}/orders/{account.Id}",
 		})
 		{ StatusCode = StatusCodes.Status201Created };
 	}
 
-	// ---- POST /acme/new-order --------------------------------------------------
+	// ---- POST /letsencrypt/{env}/new-order ------------------------------------
 
 	[HttpPost("new-order")]
-	public async Task<IActionResult> NewOrder()
+	public async Task<IActionResult> NewOrder(string env)
 	{
+		if (ValidateEnv(env) is { } envErr) return envErr;
 		var (jws, error) = await ReadJwsAsync();
 		if (error is not null)
 			return error;
@@ -146,6 +165,7 @@ public class AcmeController : ControllerBase
 		var order = new ProxyOrder
 		{
 			Domain = primaryDomain,
+			LetsEncryptEnvironment = env.ToLowerInvariant(),
 			IdentifiersJson = JsonSerializer.Serialize(request.Identifiers.Select(i => i.Value).ToList()),
 			Status = "pending",
 			CreatedAt = now,
@@ -170,17 +190,18 @@ public class AcmeController : ControllerBase
 		await _db.SaveChangesAsync();
 
 		AddReplayNonce();
-		Response.Headers["Location"] = $"{BaseUrl}/acme/order/{order.Id}";
-		return new JsonResult(BuildOrderResponse(order, authorization, certificate: null))
+		Response.Headers["Location"] = $"{AcmeBase(env)}/order/{order.Id}";
+		return new JsonResult(BuildOrderResponse(order, authorization, env, certificate: null))
 		{ StatusCode = StatusCodes.Status201Created };
 	}
 
-	// ---- GET/POST-as-GET /acme/account/{accountId} -----------------------------
+	// ---- GET/POST-as-GET /letsencrypt/{env}/account/{accountId} ---------------
 
 	[HttpGet("account/{accountId:guid}")]
 	[HttpPost("account/{accountId:guid}")]
-	public async Task<IActionResult> GetAccount(Guid accountId)
+	public async Task<IActionResult> GetAccount(string env, Guid accountId)
 	{
+		if (ValidateEnv(env) is { } envErr) return envErr;
 		_logger.LogDebug("{Method} account {AccountId}", Request.Method, accountId);
 		if (HttpMethods.IsPost(Request.Method))
 		{
@@ -193,22 +214,23 @@ public class AcmeController : ControllerBase
 			return Problem(StatusCodes.Status404NotFound, "accountDoesNotExist", "Account not found.");
 
 		AddReplayNonce();
-		Response.Headers["Location"] = $"{BaseUrl}/acme/account/{account.Id}";
+		Response.Headers["Location"] = $"{AcmeBase(env)}/account/{account.Id}";
 		return new JsonResult(new AccountResponse
 		{
 			Status = "valid",
 			Contact = new List<string>(),
-			Orders = $"{BaseUrl}/acme/orders/{account.Id}",
+			Orders = $"{AcmeBase(env)}/orders/{account.Id}",
 		});
 	}
 
-	// ---- GET/POST-as-GET /acme/orders/{accountId} -------------------------------
+	// ---- GET/POST-as-GET /letsencrypt/{env}/orders/{accountId} ----------------
 
 	// This proxy does not maintain client-account-scoped order ownership, so it returns an empty list.
 	[HttpGet("orders/{accountId:guid}")]
 	[HttpPost("orders/{accountId:guid}")]
-	public async Task<IActionResult> GetOrders(Guid accountId)
+	public async Task<IActionResult> GetOrders(string env, Guid accountId)
 	{
+		if (ValidateEnv(env) is { } envErr) return envErr;
 		_logger.LogDebug("{Method} orders for account {AccountId}", Request.Method, accountId);
 		if (HttpMethods.IsPost(Request.Method))
 		{
@@ -220,12 +242,13 @@ public class AcmeController : ControllerBase
 		return new JsonResult(new { orders = Array.Empty<string>() });
 	}
 
-	// ---- GET/POST-as-GET /acme/order/{orderId} ---------------------------------
+	// ---- GET/POST-as-GET /letsencrypt/{env}/order/{orderId} -------------------
 
 	[HttpGet("order/{orderId:guid}")]
 	[HttpPost("order/{orderId:guid}")]
-	public async Task<IActionResult> GetOrder(Guid orderId)
+	public async Task<IActionResult> GetOrder(string env, Guid orderId)
 	{
+		if (ValidateEnv(env) is { } envErr) return envErr;
 		_logger.LogDebug("{Method} order {OrderId}", Request.Method, orderId);
 		if (HttpMethods.IsPost(Request.Method))
 		{
@@ -243,15 +266,16 @@ public class AcmeController : ControllerBase
 
 		_logger.LogDebug("Order {OrderId} status={Status}", orderId, order.Status);
 		AddReplayNonce();
-		return new JsonResult(BuildOrderResponse(order, order.Authorization, order.Certificate));
+		return new JsonResult(BuildOrderResponse(order, order.Authorization, env, order.Certificate));
 	}
 
-	// ---- GET/POST-as-GET /acme/authz/{authzId} ----------------------------------
+	// ---- GET/POST-as-GET /letsencrypt/{env}/authz/{authzId} -------------------
 
 	[HttpGet("authz/{authzId:guid}")]
 	[HttpPost("authz/{authzId:guid}")]
-	public async Task<IActionResult> GetAuthz(Guid authzId)
+	public async Task<IActionResult> GetAuthz(string env, Guid authzId)
 	{
+		if (ValidateEnv(env) is { } envErr) return envErr;
 		_logger.LogDebug("{Method} authz {AuthzId}", Request.Method, authzId);
 		if (HttpMethods.IsPost(Request.Method))
 		{
@@ -277,18 +301,19 @@ public class AcmeController : ControllerBase
 				{
 					Type = "dns-01",
 					Status = authz.Challenge.Status,
-					Url = $"{BaseUrl}/acme/challenge/{authz.Challenge.Id}",
+					Url = $"{AcmeBase(env)}/challenge/{authz.Challenge.Id}",
 					Token = authz.Challenge.Token,
 				},
 			},
 		});
 	}
 
-	// ---- POST /acme/challenge/{challengeId} ------------------------------------
+	// ---- POST /letsencrypt/{env}/challenge/{challengeId} ----------------------
 
 	[HttpPost("challenge/{challengeId:guid}")]
-	public async Task<IActionResult> PostChallenge(Guid challengeId)
+	public async Task<IActionResult> PostChallenge(string env, Guid challengeId)
 	{
+		if (ValidateEnv(env) is { } envErr) return envErr;
 		var (_, error) = await ReadJwsAsync();
 		if (error is not null)
 			return error;
@@ -311,23 +336,24 @@ public class AcmeController : ControllerBase
 
 		AddReplayNonce();
 		if (challenge.Authorization is not null)
-			Response.Headers["Link"] = $"<{BaseUrl}/acme/authz/{challenge.Authorization.Id}>;rel=\"up\"";
+			Response.Headers["Link"] = $"<{AcmeBase(env)}/authz/{challenge.Authorization.Id}>;rel=\"up\"";
 
 		var status = challenge.Status == "pending" ? "processing" : challenge.Status;
 		return new JsonResult(new ChallengeResponse
 		{
 			Type = "dns-01",
 			Status = status,
-			Url = $"{BaseUrl}/acme/challenge/{challenge.Id}",
+			Url = $"{AcmeBase(env)}/challenge/{challenge.Id}",
 			Token = challenge.Token,
 		});
 	}
 
-	// ---- POST /acme/order/{orderId}/finalize -----------------------------------
+	// ---- POST /letsencrypt/{env}/order/{orderId}/finalize ---------------------
 
 	[HttpPost("order/{orderId:guid}/finalize")]
-	public async Task<IActionResult> Finalize(Guid orderId)
+	public async Task<IActionResult> Finalize(string env, Guid orderId)
 	{
+		if (ValidateEnv(env) is { } envErr) return envErr;
 		_logger.LogDebug("POST finalize for order {OrderId}", orderId);
 		var (jws, error) = await ReadJwsAsync();
 		if (error is not null)
@@ -367,11 +393,10 @@ public class AcmeController : ControllerBase
 		var csrDer = AcmeJws.Base64UrlDecode(request.Csr);
 
 		string chainPem;
-		_logger.LogInformation("Finalizing order {OrderId} against Let's Encrypt ({CsrBytes} CSR bytes)", orderId, csrDer.Length);
+		_logger.LogInformation("Finalizing order {OrderId} via Let's Encrypt {Env} ({CsrBytes} CSR bytes)", orderId, order.LetsEncryptEnvironment, csrDer.Length);
 		try
 		{
-			using var scope = _scopeFactory.CreateScope();
-			var le = scope.ServiceProvider.GetRequiredService<ILetsEncryptClient>();
+			var le = _leFactory.Get(order.LetsEncryptEnvironment);
 			chainPem = await le.FinalizeOrderAsync(order.LeOrderUrl, csrDer, HttpContext.RequestAborted);
 		}
 		catch (Exception ex)
@@ -394,16 +419,17 @@ public class AcmeController : ControllerBase
 		await _db.SaveChangesAsync();
 
 		AddReplayNonce();
-		Response.Headers["Location"] = $"{BaseUrl}/acme/order/{order.Id}";
-		return new JsonResult(BuildOrderResponse(order, order.Authorization, certificate));
+		Response.Headers["Location"] = $"{AcmeBase(env)}/order/{order.Id}";
+		return new JsonResult(BuildOrderResponse(order, order.Authorization, env, certificate));
 	}
 
-	// ---- GET/POST-as-GET /acme/cert/{certId} -----------------------------------
+	// ---- GET/POST-as-GET /letsencrypt/{env}/cert/{certId} ---------------------
 
 	[HttpGet("cert/{certId:guid}")]
 	[HttpPost("cert/{certId:guid}")]
-	public async Task<IActionResult> GetCertificate(Guid certId)
+	public async Task<IActionResult> GetCertificate(string env, Guid certId)
 	{
+		if (ValidateEnv(env) is { } envErr) return envErr;
 		_logger.LogDebug("{Method} certificate {CertId}", Request.Method, certId);
 		if (HttpMethods.IsPost(Request.Method))
 		{
@@ -422,14 +448,14 @@ public class AcmeController : ControllerBase
 	// ---- Unimplemented ---------------------------------------------------------
 
 	[HttpPost("revoke-cert")]
-	public IActionResult RevokeCert()
+	public IActionResult RevokeCert(string env)
 	{
 		AddReplayNonce();
 		return StatusCode(StatusCodes.Status501NotImplemented);
 	}
 
 	[HttpPost("key-change")]
-	public IActionResult KeyChange()
+	public IActionResult KeyChange(string env)
 	{
 		AddReplayNonce();
 		return StatusCode(StatusCodes.Status501NotImplemented);
@@ -437,21 +463,21 @@ public class AcmeController : ControllerBase
 
 	// ---- Helpers ---------------------------------------------------------------
 
-	private OrderResponse BuildOrderResponse(ProxyOrder order, ProxyAuthorization? authorization, ProxyCertificate? certificate)
+	private OrderResponse BuildOrderResponse(ProxyOrder order, ProxyAuthorization? authorization, string env, ProxyCertificate? certificate)
 	{
 		var identifiers = DeserialiseIdentifiers(order);
 		var authzUrls = authorization is null
 			? new List<string>()
-			: new List<string> { $"{BaseUrl}/acme/authz/{authorization.Id}" };
+			: new List<string> { $"{AcmeBase(env)}/authz/{authorization.Id}" };
 
 		return new OrderResponse
 		{
 			Status = order.Status,
 			Identifiers = identifiers,
 			Authorizations = authzUrls,
-			Finalize = $"{BaseUrl}/acme/order/{order.Id}/finalize",
+			Finalize = $"{AcmeBase(env)}/order/{order.Id}/finalize",
 			Certificate = (order.Status == "valid" && certificate is not null)
-				? $"{BaseUrl}/acme/cert/{certificate.Id}"
+				? $"{AcmeBase(env)}/cert/{certificate.Id}"
 				: null,
 		};
 	}

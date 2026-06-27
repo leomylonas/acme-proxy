@@ -23,6 +23,7 @@ public class LetsEncryptClient : ILetsEncryptClient
 	private readonly IServiceScopeFactory _scopeFactory;
 	private readonly IHttpClientFactory _httpClientFactory;
 	private readonly LetsEncryptOptions _options;
+	private readonly bool _isStaging;
 	private readonly ILogger<LetsEncryptClient> _logger;
 
 	private AcmeContext? _acme;
@@ -31,17 +32,19 @@ public class LetsEncryptClient : ILetsEncryptClient
 		IServiceScopeFactory scopeFactory,
 		IHttpClientFactory httpClientFactory,
 		IOptions<ProxyOptions> options,
+		bool isStaging,
 		ILogger<LetsEncryptClient> logger)
 	{
 		_scopeFactory = scopeFactory;
 		_httpClientFactory = httpClientFactory;
 		_options = options.Value.LetsEncrypt;
+		_isStaging = isStaging;
 		_logger = logger;
 	}
 
 	private Uri DirectoryUri => !string.IsNullOrWhiteSpace(_options.DirectoryUrl)
 		? new Uri(_options.DirectoryUrl)
-		: _options.UseStaging
+		: _isStaging
 			? WellKnownServers.LetsEncryptStagingV2
 			: WellKnownServers.LetsEncryptV2;
 
@@ -54,15 +57,20 @@ public class LetsEncryptClient : ILetsEncryptClient
 	/// <summary>
 	/// Called once on startup. Loads LE account from DB or creates a new one.
 	/// </summary>
+	private string EnvironmentName => _isStaging ? "staging" : "production";
+
 	public async Task InitialiseAsync(CancellationToken ct)
 	{
-		_logger.LogInformation("Initialising Let's Encrypt client against {Directory} (staging={Staging})",
-			DirectoryUri, _options.UseStaging);
+		_logger.LogInformation("Initialising Let's Encrypt client against {Directory} (env={Env})",
+			DirectoryUri, EnvironmentName);
 
 		using var scope = _scopeFactory.CreateScope();
 		var db = scope.ServiceProvider.GetRequiredService<AcmeProxyDbContext>();
 
-		var existing = await db.LeAccounts.OrderBy(a => a.Id).FirstOrDefaultAsync(ct);
+		var existing = await db.LeAccounts
+			.Where(a => a.Environment == EnvironmentName)
+			.OrderBy(a => a.Id)
+			.FirstOrDefaultAsync(ct);
 		if (existing is not null)
 		{
 			var key = KeyFactory.FromPem(existing.AccountKeyPem);
@@ -82,6 +90,7 @@ public class LetsEncryptClient : ILetsEncryptClient
 			Email = _options.AccountEmail,
 			AccountKeyPem = _acme.AccountKey.ToPem(),
 			AccountUri = location.ToString(),
+			Environment = EnvironmentName,
 			CreatedAt = DateTime.UtcNow,
 		};
 		db.LeAccounts.Add(record);

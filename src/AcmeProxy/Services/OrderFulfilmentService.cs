@@ -16,20 +16,20 @@ public class OrderFulfilmentService
 	private static readonly ConcurrentDictionary<string, SemaphoreSlim> DomainLocks = new();
 
 	private readonly AcmeProxyDbContext _db;
-	private readonly ILetsEncryptClient _letsEncrypt;
+	private readonly ILetsEncryptClientFactory _leFactory;
 	private readonly IDnsProviderPlugin _dnsProvider;
 	private readonly IDnsPropagationPoller _poller;
 	private readonly ILogger<OrderFulfilmentService> _logger;
 
 	public OrderFulfilmentService(
 		AcmeProxyDbContext db,
-		ILetsEncryptClient letsEncrypt,
+		ILetsEncryptClientFactory leFactory,
 		IDnsProviderPlugin dnsProvider,
 		IDnsPropagationPoller poller,
 		ILogger<OrderFulfilmentService> logger)
 	{
 		_db = db;
-		_letsEncrypt = letsEncrypt;
+		_leFactory = leFactory;
 		_dnsProvider = dnsProvider;
 		_poller = poller;
 		_logger = logger;
@@ -68,8 +68,9 @@ public class OrderFulfilmentService
 			await _db.SaveChangesAsync(ct);
 
 			var identifiers = DeserialiseIdentifiers(order.IdentifiersJson, domain);
-			_logger.LogInformation("Creating Let's Encrypt order for [{Identifiers}]", string.Join(", ", identifiers));
-			var leOrder = await _letsEncrypt.CreateOrderAsync(identifiers, ct);
+			var le = _leFactory.Get(order.LetsEncryptEnvironment);
+			_logger.LogInformation("Creating Let's Encrypt order for [{Identifiers}] (env={Env})", string.Join(", ", identifiers), order.LetsEncryptEnvironment);
+			var leOrder = await le.CreateOrderAsync(identifiers, ct);
 			_logger.LogDebug("LE order created: url={Url} token={Token} txt={Txt}", leOrder.LeOrderUrl, leOrder.Token, leOrder.DnsTxtValue);
 
 			order.LeOrderUrl = leOrder.LeOrderUrl;
@@ -88,10 +89,10 @@ public class OrderFulfilmentService
 			await _poller.WaitForPropagationAsync(fqdn, leOrder.DnsTxtValue, ct);
 
 			_logger.LogInformation("Notifying Let's Encrypt that challenge is ready");
-			await _letsEncrypt.NotifyChallengeReadyAsync(leOrder.LeOrderUrl, ct);
+			await le.NotifyChallengeReadyAsync(leOrder.LeOrderUrl, ct);
 
 			_logger.LogInformation("Waiting for Let's Encrypt challenge validation");
-			await _letsEncrypt.WaitForChallengeValidationAsync(leOrder.LeOrderUrl, ct);
+			await le.WaitForChallengeValidationAsync(leOrder.LeOrderUrl, ct);
 
 			await CleanupDnsRecordAsync(domain, challenge.HestiaDnsRecordId, ct);
 

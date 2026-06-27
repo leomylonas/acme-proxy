@@ -14,13 +14,19 @@ namespace AcmeProxy.Tests.Services;
 public class OrderFulfilmentServiceTests
 {
 	private readonly Mock<ILetsEncryptClient> _le = new();
+	private readonly Mock<ILetsEncryptClientFactory> _leFactory = new();
 	private readonly Mock<IDnsProviderPlugin> _dns = new();
 	private readonly Mock<IDnsPropagationPoller> _poller = new();
 
 	private static readonly LeOrderContext LeOrder = new("https://le/order/1", "tok", "txt-value");
 
+	public OrderFulfilmentServiceTests()
+	{
+		_leFactory.Setup(f => f.Get(It.IsAny<string>())).Returns(_le.Object);
+	}
+
 	private OrderFulfilmentService Build(AcmeProxyDbContext db) =>
-		new(db, _le.Object, _dns.Object, _poller.Object, NullLogger<OrderFulfilmentService>.Instance);
+		new(db, _leFactory.Object, _dns.Object, _poller.Object, NullLogger<OrderFulfilmentService>.Instance);
 
 	private static (AcmeProxyDbContext db, Guid challengeId) Seed(string domain = "example.com")
 	{

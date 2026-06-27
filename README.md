@@ -98,6 +98,32 @@ ASP.NET Core double-underscore convention (`Proxy__HestiaCP__AccessKey=...`).
 | `Proxy:Dns:ResolverAddresses` | Public resolvers that must **all** observe the TXT value before validation proceeds. | `["8.8.8.8","1.1.1.1"]` |
 | `Proxy:InitialiseLetsEncryptOnStartup` | Register/load the LE account at boot. Set `false` for tests/offline runs. | `true` |
 
+### TLS / HTTPS
+
+AcmeProxy serves plain HTTP by default. To enable HTTPS, add a `Kestrel` section to your
+`appsettings.json` (or `appsettings.user.json` / environment variables):
+
+```json
+{
+  "Kestrel": {
+    "Endpoints": {
+      "Https": {
+        "Url": "https://*:443",
+        "Certificate": {
+          "Path": "/certs/tls.crt",
+          "KeyPath": "/certs/tls.key"
+        }
+      }
+    }
+  }
+}
+```
+
+The certificate is **reloaded automatically** when the files change on disk — no restart
+required. This means a certbot renewal hook that writes new files to `/certs/` is all that
+is needed for zero-downtime rotation. PFX files are also supported (`Path` + `Password`
+instead of `Path` + `KeyPath`).
+
 ### Domain allow-list semantics
 
 With `AllowedDomains: ["example.com"]`:

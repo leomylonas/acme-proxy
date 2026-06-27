@@ -13,12 +13,12 @@ public static class AcmeIssuanceFlow
 {
 	public static async Task<string> RunAsync(HttpClient client, JwsSigner signer, string domain, TimeSpan readyTimeout)
 	{
-		var account = await PostAsync(client, "/acme/new-account",
+		var account = await PostAsync(client, "/letsencrypt/staging/new-account",
 			signer.SignWithJwk(await NonceAsync(client), new { termsOfServiceAgreed = true }));
 		account.StatusCode.Should().Be(HttpStatusCode.Created);
 		var kid = account.Headers.Location!.ToString();
 
-		var orderResponse = await PostAsync(client, "/acme/new-order",
+		var orderResponse = await PostAsync(client, "/letsencrypt/staging/new-order",
 			signer.SignWithKid(await NonceAsync(client), kid,
 				new { identifiers = new[] { new { type = "dns", value = domain } } }));
 		orderResponse.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -50,7 +50,7 @@ public static class AcmeIssuanceFlow
 
 	private static async Task<string> NonceAsync(HttpClient client)
 	{
-		var response = await client.GetAsync("/acme/new-nonce");
+		var response = await client.GetAsync("/letsencrypt/staging/new-nonce");
 		return response.Headers.GetValues("Replay-Nonce").First();
 	}
 

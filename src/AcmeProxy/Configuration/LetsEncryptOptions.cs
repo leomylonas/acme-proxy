@@ -2,7 +2,6 @@ namespace AcmeProxy.Configuration;
 
 public class LetsEncryptOptions
 {
-	public bool UseStaging { get; set; } = true;
 	public string AccountEmail { get; set; } = string.Empty;
 
 	/// <summary>

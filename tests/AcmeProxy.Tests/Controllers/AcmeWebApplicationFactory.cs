@@ -37,7 +37,7 @@ public class AcmeWebApplicationFactory : WebApplicationFactory<Program>
 			}
 			services.AddDbContext<AcmeProxyDbContext>(o => o.UseInMemoryDatabase(_dbName, _dbRoot));
 
-			Replace<ILetsEncryptClient>(services, new StubLetsEncryptClient());
+			Replace<ILetsEncryptClientFactory>(services, new StubLetsEncryptClientFactory());
 			Replace<IDnsProviderPlugin>(services, new StubDnsProvider());
 			Replace<IDnsPropagationPoller>(services, new StubPoller());
 		});
@@ -61,6 +61,13 @@ public class AcmeWebApplicationFactory : WebApplicationFactory<Program>
 	{
 		RemoveAll<T>(services);
 		services.AddSingleton(instance);
+	}
+
+	private sealed class StubLetsEncryptClientFactory : ILetsEncryptClientFactory
+	{
+		private readonly ILetsEncryptClient _client = new StubLetsEncryptClient();
+		public ILetsEncryptClient Get(string environment) => _client;
+		public Task InitialiseAllAsync(CancellationToken ct) => Task.CompletedTask;
 	}
 
 	private sealed class StubLetsEncryptClient : ILetsEncryptClient

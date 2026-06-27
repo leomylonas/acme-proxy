@@ -14,6 +14,9 @@ public class Program
 	{
 		var builder = WebApplication.CreateBuilder(args);
 
+		builder.WebHost.UseKestrel((context, serverOptions) =>
+			serverOptions.Configure(context.Configuration.GetSection("Kestrel"), reloadOnChange: true));
+
 		// Optional local, git-ignored overrides (e.g. HestiaCP secrets for local runs).
 		// Layered last so it wins over appsettings.json and appsettings.{Environment}.json.
 		// Skipped under the "Testing" environment so automated tests stay isolated from
@@ -63,8 +66,8 @@ public class Program
 		services.AddSingleton<IDnsTxtResolver, DnsClientTxtResolver>();
 		services.AddSingleton<IDnsProviderPlugin, HestiaCPClient>();
 		services.AddScoped<IDnsPropagationPoller, DnsPropagationPoller>();
-		// Singleton: holds the certes AcmeContext established once by InitialiseAsync.
-		services.AddSingleton<ILetsEncryptClient, LetsEncryptClient>();
+		// Singleton: holds one certes AcmeContext per environment, initialised once at startup.
+		services.AddSingleton<ILetsEncryptClientFactory, LetsEncryptClientFactory>();
 		services.AddScoped<OrderFulfilmentService>();
 
 		services.AddControllers();
@@ -84,8 +87,8 @@ public class Program
 
 		if (app.Configuration.GetValue("Proxy:InitialiseLetsEncryptOnStartup", true))
 		{
-			var le = scope.ServiceProvider.GetRequiredService<ILetsEncryptClient>();
-			await le.InitialiseAsync(CancellationToken.None);
+			var factory = scope.ServiceProvider.GetRequiredService<ILetsEncryptClientFactory>();
+			await factory.InitialiseAllAsync(CancellationToken.None);
 		}
 		else
 		{

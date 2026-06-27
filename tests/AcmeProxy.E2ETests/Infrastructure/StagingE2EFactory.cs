@@ -26,7 +26,6 @@ public class StagingE2EFactory : WebApplicationFactory<Program>
 
 		builder.UseEnvironment("Testing");
 		builder.UseSetting("Proxy:InitialiseLetsEncryptOnStartup", "true");
-		builder.UseSetting("Proxy:LetsEncrypt:UseStaging", "true");
 		builder.UseSetting("Proxy:LetsEncrypt:AccountEmail", s.AccountEmail);
 		builder.UseSetting("Proxy:AllowedDomains:0", s.Domain);
 		builder.UseSetting("Proxy:HestiaCP:BaseUrl", s.HestiaBaseUrl);

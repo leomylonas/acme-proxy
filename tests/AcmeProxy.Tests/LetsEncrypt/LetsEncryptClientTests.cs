@@ -19,12 +19,12 @@ public class LetsEncryptClientTests
 	{
 		var options = Options.Create(new ProxyOptions
 		{
-			LetsEncrypt = new LetsEncryptOptions { UseStaging = true, AccountEmail = "admin@example.com" },
+			LetsEncrypt = new LetsEncryptOptions { AccountEmail = "admin@example.com" },
 		});
 		var httpFactory = new Mock<IHttpClientFactory>();
 		httpFactory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(new HttpClient());
 		var scopeFactory = new Mock<IServiceScopeFactory>();
-		return new LetsEncryptClient(scopeFactory.Object, httpFactory.Object, options, NullLogger<LetsEncryptClient>.Instance);
+		return new LetsEncryptClient(scopeFactory.Object, httpFactory.Object, options, isStaging: true, NullLogger<LetsEncryptClient>.Instance);
 	}
 
 	[Fact]
